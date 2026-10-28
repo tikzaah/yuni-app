@@ -18,10 +18,37 @@
   @media (prefers-color-scheme: dark) { html, body { background: #12151b; } }
   iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; }
 </style>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 </head>
 <body>
-<!-- แอปบันทึกรายวัน (Google Apps Script) ฝังอยู่ในหน้านี้เพื่อให้มีไอคอนและชื่อแอปของร้าน -->
+<!-- แอปยูนิคาร์แคร์ (Google Apps Script) ฝังอยู่ในหน้านี้ เพื่อให้มีไอคอน/ชื่อแอปของร้าน และล็อกอินด้วย LINE (LIFF) -->
 <iframe src="https://script.google.com/macros/s/AKfycbyx4wKToWmULfQQzxxRoOXnKwX-I6H10quge7XJ31OGifACz4JrqlM0W80KJ4Xse9neXQ/exec"
-        title="ยูนิคาร์แคร์ บันทึกรายวัน"></iframe>
+        title="ยูนิคาร์แคร์"></iframe>
+<script>
+  // แอปในกรอบส่ง yuni-ready มา แล้วหน้านี้ตอบกลับด้วย ID token ของ LINE (หรือ none ถ้ายังไม่ล็อกอิน)
+  const LIFF_ID = '2012262204-Wf5LfzGA';
+  const waiting = [];
+  let auth = null;
+  function flush() {
+    if (!auth) return;
+    waiting.splice(0).forEach(w => w.postMessage(Object.assign({ type: 'yuni-auth' }, auth), '*'));
+  }
+  window.addEventListener('message', e => {
+    const t = e.data && e.data.type;
+    if (t === 'yuni-ready') { waiting.push(e.source); flush(); }
+    if (t === 'yuni-login' && window.liff) liff.login({ redirectUri: location.origin + location.pathname });
+    if (t === 'yuni-logout' && window.liff && liff.isLoggedIn()) liff.logout();
+  });
+  if (window.liff) {
+    liff.init({ liffId: LIFF_ID }).then(() => {
+      if (liff.isLoggedIn()) auth = { idToken: liff.getIDToken() };
+      else if (liff.isInClient()) { liff.login(); return; }
+      else auth = { none: true };
+      flush();
+    }).catch(err => { auth = { none: true, error: String(err) }; flush(); });
+  } else {
+    auth = { none: true, error: 'LIFF SDK โหลดไม่ได้' };
+  }
+</script>
 </body>
 </html>
