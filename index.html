@@ -26,6 +26,7 @@
         title="ยูนิคาร์แคร์"></iframe>
 <script>
   // แอปในกรอบส่ง yuni-ready มา แล้วหน้านี้ตอบกลับด้วย ID token ของ LINE (หรือ none ถ้ายังไม่ล็อกอิน)
+  // ?pair=รหัส = เปิดจากปุ่มล็อกอินของแอปบนหน้าจอโฮม: ล็อกอินที่นี่แล้วส่ง session ให้แอปนั้น (แอปหน้าจอโฮมรับ redirect ของ LINE ไม่ได้)
   const LIFF_ID = '2012262204-Wf5LfzGA';
   const waiting = [];
   let auth = null;
@@ -36,13 +37,15 @@
   window.addEventListener('message', e => {
     const t = e.data && e.data.type;
     if (t === 'yuni-ready') { waiting.push(e.source); flush(); }
-    if (t === 'yuni-login' && window.liff) liff.login({ redirectUri: location.origin + location.pathname });
     if (t === 'yuni-logout' && window.liff && liff.isLoggedIn()) liff.logout();
   });
   if (window.liff) {
     liff.init({ liffId: LIFF_ID }).then(() => {
-      if (liff.isLoggedIn()) auth = { idToken: liff.getIDToken() };
-      else if (liff.isInClient()) { liff.login(); return; }
+      const pair = new URLSearchParams(location.search).get('pair') || '';
+      const decoded = liff.isLoggedIn() ? liff.getDecodedIDToken() : null;
+      if (liff.isLoggedIn() && (!decoded || decoded.exp * 1000 < Date.now() + 60000)) liff.logout(); // token หมดอายุ ล็อกอินใหม่
+      if (liff.isLoggedIn()) auth = { idToken: liff.getIDToken(), pair: pair };
+      else if (liff.isInClient() || pair) { liff.login({ redirectUri: location.href }); return; }
       else auth = { none: true };
       flush();
     }).catch(err => { auth = { none: true, error: String(err) }; flush(); });
