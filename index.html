@@ -13,28 +13,33 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://static.line-scdn.net">
 <style>
   html, body { margin: 0; height: 100%; background: #f4f5f7; }
   @media (prefers-color-scheme: dark) { html, body { background: #12151b; } }
   iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; }
 </style>
-<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 </head>
 <body>
 <!-- แอปยูนิคาร์แคร์ (Google Apps Script) ฝังอยู่ในหน้านี้ เพื่อให้มีไอคอน/ชื่อแอปของร้าน และล็อกอินด้วย LINE (LIFF) -->
 <iframe src="https://script.google.com/macros/s/AKfycbyx4wKToWmULfQQzxxRoOXnKwX-I6H10quge7XJ31OGifACz4JrqlM0W80KJ4Xse9neXQ/exec"
         title="ยูนิคาร์แคร์"></iframe>
 <script>
-  // แอปในกรอบส่ง yuni-ready มา แล้วหน้านี้ตอบกลับด้วย ID token ของ LINE (หรือ none ถ้ายังไม่ล็อกอิน)
+  // แอปในกรอบส่ง yuni-ready มา แล้วหน้านี้ตอบกลับด้วย session ที่จำไว้ (เร็วสุด) หรือ ID token ของ LINE หรือ none
   // ?pair=รหัส = เปิดจากปุ่มล็อกอินของแอปบนหน้าจอโฮม: ล็อกอินที่นี่แล้วส่ง session ให้แอปนั้น (แอปหน้าจอโฮมรับ redirect ของ LINE ไม่ได้)
   // session ของแอปเก็บที่หน้านี้ (iPhone ล้างที่เก็บข้อมูลของกรอบ Google ทุกครั้งที่ปิดแอปบนหน้าจอโฮม)
   const LIFF_ID = '2012262204-Wf5LfzGA';
-  const CRED_KEY = 'yuni_cred';
+  const CRED_KEY = 'yuni_cred', WHO_KEY = 'yuni_who';
   const frame = document.querySelector('iframe');
   const waiting = [];
   let auth = null;
-  const saved = { get() { try { return localStorage.getItem(CRED_KEY) || ''; } catch (e) { return ''; } },
-    set(v) { try { v ? localStorage.setItem(CRED_KEY, v) : localStorage.removeItem(CRED_KEY); } catch (e) {} } };
+  const store = {
+    get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
+    set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) {} },
+  };
+  const savedWho = () => { try { return JSON.parse(store.get(WHO_KEY) || 'null'); } catch (e) { return null; } };
+  const pairing = /pair/.test(location.search);
   /** ข้อความมาจากแอปในกรอบของหน้านี้จริง (ไม่ใช่หน้าเว็บอื่น) */
   function fromApp(src) {
     for (let w = src, i = 0; w && i < 4; i++, w = w.parent) if (w === frame.contentWindow) return true;
@@ -42,17 +47,23 @@
   }
   function flush() {
     if (!auth) return;
-    waiting.splice(0).forEach(w => w.src.postMessage(Object.assign({ type: 'yuni-auth', cred: saved.get() }, auth), w.origin));
+    waiting.splice(0).forEach(w => w.src.postMessage(Object.assign({ type: 'yuni-auth', cred: store.get(CRED_KEY), who: savedWho() }, auth), w.origin));
   }
   window.addEventListener('message', e => {
     const t = e.data && e.data.type;
     if (!t || !fromApp(e.source)) return;
     if (t === 'yuni-ready') { waiting.push({ src: e.source, origin: e.origin }); flush(); }
-    if (t === 'yuni-save') saved.set(String(e.data.cred || ''));
-    if (t === 'yuni-logout') { saved.set(''); if (window.liff && liff.isLoggedIn()) liff.logout(); }
+    if (t === 'yuni-save') {
+      store.set(CRED_KEY, String(e.data.cred || ''));
+      store.set(WHO_KEY, e.data.cred && e.data.who ? JSON.stringify(e.data.who) : '');
+    }
+    if (t === 'yuni-logout') { store.set(CRED_KEY, ''); store.set(WHO_KEY, ''); if (window.liff && liff.isLoggedIn()) liff.logout(); }
   });
-  if (window.liff) {
+  // เคยล็อกอินแล้ว: ตอบแอปได้เลย ไม่ต้องรอ LINE
+  if (store.get(CRED_KEY) && !pairing) auth = { none: true };
+  function startLiff() {
     liff.init({ liffId: LIFF_ID }).then(() => {
+      if (auth) return;
       const pair = new URLSearchParams(location.search).get('pair') || '';
       const decoded = liff.isLoggedIn() ? liff.getDecodedIDToken() : null;
       if (liff.isLoggedIn() && (!decoded || decoded.exp * 1000 < Date.now() + 60000)) liff.logout(); // token หมดอายุ ล็อกอินใหม่
@@ -60,10 +71,10 @@
       else if (liff.isInClient() || pair) { liff.login({ redirectUri: location.href }); return; }
       else auth = { none: true };
       flush();
-    }).catch(err => { auth = { none: true, error: String(err) }; flush(); });
-  } else {
-    auth = { none: true, error: 'LIFF SDK โหลดไม่ได้' };
+    }).catch(err => { if (!auth) { auth = { none: true, error: String(err) }; flush(); } });
   }
+  function liffFailed() { if (!auth) { auth = { none: true, error: 'LIFF SDK โหลดไม่ได้' }; flush(); } }
 </script>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js" async onload="startLiff()" onerror="liffFailed()"></script>
 </body>
 </html>
