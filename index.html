@@ -40,6 +40,8 @@
   };
   const savedWho = () => { try { return JSON.parse(store.get(WHO_KEY) || 'null'); } catch (e) { return null; } };
   const pairing = /pair/.test(location.search);
+  // ?as=customer = พนักงาน/เจ้าของเปิดดูแบบลูกค้าเพื่อทดสอบ (ผ่าน liff.line.me จะมาเป็น liff.state=%3Fas%3Dcustomer)
+  const asCustomer = /as(=|%3D)customer/i.test(location.search);
   /** ข้อความมาจากแอปในกรอบของหน้านี้จริง (ไม่ใช่หน้าเว็บอื่น) */
   function fromApp(src) {
     for (let w = src, i = 0; w && i < 4; i++, w = w.parent) if (w === frame.contentWindow) return true;
@@ -47,7 +49,7 @@
   }
   function flush() {
     if (!auth) return;
-    waiting.splice(0).forEach(w => w.src.postMessage(Object.assign({ type: 'yuni-auth', cred: store.get(CRED_KEY), who: savedWho() }, auth), w.origin));
+    waiting.splice(0).forEach(w => w.src.postMessage(Object.assign({ type: 'yuni-auth', cred: store.get(CRED_KEY), who: savedWho(), asCustomer: asCustomer }, auth), w.origin));
   }
   window.addEventListener('message', e => {
     const t = e.data && e.data.type;
