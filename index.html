@@ -23,7 +23,7 @@
 </head>
 <body>
 <!-- แอปยูนิคาร์แคร์ (Google Apps Script) ฝังอยู่ในหน้านี้ เพื่อให้มีไอคอน/ชื่อแอปของร้าน และล็อกอินด้วย LINE (LIFF) -->
-<iframe src="https://script.google.com/macros/s/AKfycbyx4wKToWmULfQQzxxRoOXnKwX-I6H10quge7XJ31OGifACz4JrqlM0W80KJ4Xse9neXQ/exec"
+<iframe allow="geolocation" src="https://script.google.com/macros/s/AKfycbyx4wKToWmULfQQzxxRoOXnKwX-I6H10quge7XJ31OGifACz4JrqlM0W80KJ4Xse9neXQ/exec"
         title="ยูนิคาร์แคร์"></iframe>
 <script>
   // แอปในกรอบส่ง yuni-ready มา แล้วหน้านี้ตอบกลับด้วย session ที่จำไว้ (เร็วสุด) หรือ ID token ของ LINE หรือ none
@@ -58,6 +58,14 @@
     if (t === 'yuni-save') {
       store.set(CRED_KEY, String(e.data.cred || ''));
       store.set(WHO_KEY, e.data.cred && e.data.who ? JSON.stringify(e.data.who) : '');
+    }
+    // ปุ่ม "ใช้ตำแหน่งปัจจุบัน": เบราว์เซอร์ไม่ให้กรอบซ้อนของ Google ขอตำแหน่ง หน้านี้ขอแทนแล้วส่งพิกัดกลับ
+    if (t === 'yuni-locate') {
+      const reply = d => e.source.postMessage(Object.assign({ type: 'yuni-location' }, d), e.origin);
+      reply({ pending: true });
+      if (!navigator.geolocation) reply({ error: 0 });
+      else navigator.geolocation.getCurrentPosition(p => reply({ lat: p.coords.latitude, lng: p.coords.longitude }),
+        err => reply({ error: err.code }), { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
     }
     if (t === 'yuni-logout') { store.set(CRED_KEY, ''); store.set(WHO_KEY, ''); if (window.liff && liff.isLoggedIn()) liff.logout(); }
   });
