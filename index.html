@@ -22,9 +22,9 @@
 </style>
 </head>
 <body>
-<!-- แอปยูนิคาร์แคร์ (Google Apps Script) ฝังอยู่ในหน้านี้ เพื่อให้มีไอคอน/ชื่อแอปของร้าน และล็อกอินด้วย LINE (LIFF) -->
-<iframe allow="geolocation" src="https://script.google.com/macros/s/AKfycbyx4wKToWmULfQQzxxRoOXnKwX-I6H10quge7XJ31OGifACz4JrqlM0W80KJ4Xse9neXQ/exec"
-        title="ยูนิคาร์แคร์"></iframe>
+<!-- แอปยูนิคาร์แคร์ฝังอยู่ในหน้านี้ (ไอคอน/ชื่อแอปของร้าน + ล็อกอินด้วย LINE)
+     อยู่ในร้าน (Wi-Fi ร้าน): เปิดจากเครื่อง Pi ในร้าน (เร็ว) · นอกร้าน หรือ Pi ไม่ตอบ: เปิดจาก Google เหมือนเดิม -->
+<iframe allow="geolocation" title="ยูนิคาร์แคร์"></iframe>
 <script>
   // แอปในกรอบส่ง yuni-ready มา แล้วหน้านี้ตอบกลับด้วย session ที่จำไว้ (เร็วสุด) หรือ ID token ของ LINE หรือ none
   // ?pair=รหัส = เปิดจากปุ่มล็อกอินของแอปบนหน้าจอโฮม: ล็อกอินที่นี่แล้วส่ง session ให้แอปนั้น (แอปหน้าจอโฮมรับ redirect ของ LINE ไม่ได้)
@@ -32,6 +32,18 @@
   const LIFF_ID = '2012262204-Wf5LfzGA';
   const CRED_KEY = 'yuni_cred', WHO_KEY = 'yuni_who';
   const frame = document.querySelector('iframe');
+  const GOOGLE_APP = 'https://script.google.com/macros/s/AKfycbyx4wKToWmULfQQzxxRoOXnKwX-I6H10quge7XJ31OGifACz4JrqlM0W80KJ4Xse9neXQ/exec';
+  const PI_APP = 'https://yuniwashq.duckdns.org:8443/';
+  let usingPi = false;
+  function openApp(url) { usingPi = url === PI_APP; frame.src = url; }
+  // ลองเครื่อง Pi ในร้านก่อน (ตอบไม่เกิน 1 วินาที) ไม่ตอบ = อยู่นอกร้านหรือ Pi ดับ → ใช้ Google
+  (function pickApp() {
+    if (/(^|[?&])google=1/.test(location.search)) { openApp(GOOGLE_APP); return; }
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 1000);
+    fetch(PI_APP + 'health', { signal: ctl.signal, cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null)).then(j => { clearTimeout(timer); openApp(j && j.ok ? PI_APP : GOOGLE_APP); })
+      .catch(() => { clearTimeout(timer); openApp(GOOGLE_APP); });
+  })();
   const waiting = [];
   let auth = null;
   const store = {
@@ -67,6 +79,8 @@
       else navigator.geolocation.getCurrentPosition(p => reply({ lat: p.coords.latitude, lng: p.coords.longitude }),
         err => reply({ error: err.code }), { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
     }
+    // แอปบน Pi ติดต่อเครื่อง Pi ไม่ได้ระหว่างใช้งาน (ออกนอกร้าน / Pi ดับ): สลับไปใช้ Google ทันที
+    if (t === 'yuni-pi-down' && usingPi) openApp(GOOGLE_APP);
     if (t === 'yuni-logout') { store.set(CRED_KEY, ''); store.set(WHO_KEY, ''); if (window.liff && liff.isLoggedIn()) liff.logout(); }
   });
   // เคยล็อกอินแล้ว: ตอบแอปได้เลย ไม่ต้องรอ LINE
