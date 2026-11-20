@@ -33,16 +33,22 @@
   const CRED_KEY = 'yuni_cred', WHO_KEY = 'yuni_who';
   const frame = document.querySelector('iframe');
   const GOOGLE_APP = 'https://script.google.com/macros/s/AKfycbyx4wKToWmULfQQzxxRoOXnKwX-I6H10quge7XJ31OGifACz4JrqlM0W80KJ4Xse9neXQ/exec';
-  const PI_APP = 'https://yuniwashq.duckdns.org:8443/';
+  // ลำดับ: เครื่อง Pi ในร้าน (Wi-Fi ร้าน เร็วสุด) → Pi ผ่าน Cloudflare (นอกร้าน) → Google (Pi ดับ/เน็ตร้านล่ม)
+  const PI_LAN = 'https://yuniwashq.duckdns.org:8443/', PI_NET = 'https://yuni.washqapp.com/';
   let usingPi = false;
-  function openApp(url) { usingPi = url === PI_APP; frame.src = url; }
-  // ลองเครื่อง Pi ในร้านก่อน (ตอบไม่เกิน 1 วินาที) ไม่ตอบ = อยู่นอกร้านหรือ Pi ดับ → ใช้ Google
+  function openApp(url) { usingPi = url !== GOOGLE_APP; frame.src = url; }
+  const probe = (base, ms) => {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
+    return fetch(base + 'health', { signal: ctl.signal, cache: 'no-store' }).then(r => (r.ok ? r.json() : null))
+      .then(j => { clearTimeout(t); return !!(j && j.ok); }).catch(() => { clearTimeout(t); return false; });
+  };
   (function pickApp() {
     if (/(^|[?&])google=1/.test(location.search)) { openApp(GOOGLE_APP); return; }
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 1000);
-    fetch(PI_APP + 'health', { signal: ctl.signal, cache: 'no-store' })
-      .then(r => (r.ok ? r.json() : null)).then(j => { clearTimeout(timer); openApp(j && j.ok ? PI_APP : GOOGLE_APP); })
-      .catch(() => { clearTimeout(timer); openApp(GOOGLE_APP); });
+    const lan = probe(PI_LAN, 800), net = probe(PI_NET, 1500);
+    lan.then(ok => {
+      if (ok) { openApp(PI_LAN); return; }
+      net.then(ok2 => openApp(ok2 ? PI_NET : GOOGLE_APP));
+    });
   })();
   const waiting = [];
   let auth = null;
